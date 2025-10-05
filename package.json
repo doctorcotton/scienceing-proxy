@@ -1,0 +1,30 @@
+{
+  "name": "scienceing-proxy-server",
+  "version": "1.0.0",
+  "description": "Scienceing 代理服务器 - 使用 Puppeteer 绕过 RSA 签名限制",
+  "main": "proxy-server.js",
+  "scripts": {
+    "start": "node proxy-server.js",
+    "dev": "nodemon proxy-server.js"
+  },
+  "keywords": [
+    "scienceing",
+    "proxy",
+    "puppeteer",
+    "crawler"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "puppeteer": "^21.0.0",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
