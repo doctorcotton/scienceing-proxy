@@ -16,10 +16,10 @@ npm install
 
 ```bash
 PORT=3000
-SCIENCEING_EMAIL=zhudi@yuanqisenlin.com
-SCIENCEING_PASSWORD=401027
-API_KEY=your-secret-key-here
+API_KEY=your-secret-key-here  # 可选：用于保护 API 访问
 ```
+
+**💡 重要提示**：账号密码不需要在环境变量中配置，而是通过 API 请求传入，更加安全！
 
 ### 3. 启动服务器
 
@@ -37,12 +37,16 @@ npm start
 ```json
 {
   "keyword": "人工智能",
-  "email": "zhudi@yuanqisenlin.com",
-  "password": "401027",
+  "email": "your-email@example.com",
+  "password": "your-password",
   "timeRange": "one_month",
   "pageSize": 20
 }
 ```
+
+**说明**：
+- `email` 和 `password` 通过请求体传入，不会存储在服务器上
+- 每次请求都会检查账号，如果切换账号会自动重新登录
 
 **响应**:
 ```json

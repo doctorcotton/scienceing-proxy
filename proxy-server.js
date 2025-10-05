@@ -19,8 +19,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 配置（从环境变量读取）
-const DEFAULT_EMAIL = process.env.SCIENCEING_EMAIL || '';
-const DEFAULT_PASSWORD = process.env.SCIENCEING_PASSWORD || '';
 const API_KEY = process.env.API_KEY || ''; // 如果设置了，则需要验证
 
 // 中间件
@@ -31,10 +29,7 @@ app.use(cors());
 let browser = null;
 let page = null;
 let isLoggedIn = false;
-let loginCredentials = {
-  email: DEFAULT_EMAIL,
-  password: DEFAULT_PASSWORD
-};
+let lastLoginEmail = ''; // 记录上次登录的邮箱，用于判断是否需要重新登录
 
 // ============================================
 // API 密钥验证中间件
@@ -104,8 +99,8 @@ async function initBrowser() {
 async function login(email, password) {
   console.log(`🔐 登录: ${email}`);
   
-  // 保存凭据供后续使用
-  loginCredentials = { email, password };
+  // 记录当前登录的邮箱
+  lastLoginEmail = email;
   
   try {
     // 访问首页
@@ -361,7 +356,7 @@ app.get('/health', async (req, res) => {
     },
     auth: {
       loggedIn: isLoggedIn,
-      hasCredentials: !!(loginCredentials.email && loginCredentials.password)
+      lastLoginEmail: lastLoginEmail || '未登录'
     }
   };
   
@@ -444,20 +439,19 @@ app.post('/api/search-auto', verifyApiKey, async (req, res) => {
   }
   
   try {
-    // 如果未登录，先登录
-    if (!isLoggedIn) {
-      const loginEmail = email || loginCredentials.email;
-      const loginPassword = password || loginCredentials.password;
-      
-      if (!loginEmail || !loginPassword) {
+    // 检查是否需要登录或重新登录
+    const needLogin = !isLoggedIn || (email && email !== lastLoginEmail);
+    
+    if (needLogin) {
+      if (!email || !password) {
         return res.status(400).json({
           success: false,
-          error: '未登录且缺少登录凭据（email/password）'
+          error: '需要提供登录凭据（email 和 password）'
         });
       }
       
       console.log('🔐 自动登录...');
-      const loginResult = await login(loginEmail, loginPassword);
+      const loginResult = await login(email, password);
       
       if (!loginResult.success) {
         return res.status(401).json(loginResult);
@@ -482,14 +476,18 @@ app.post('/api/search-auto', verifyApiKey, async (req, res) => {
 
 // 重新登录接口（如果登录失效）
 app.post('/api/re-login', verifyApiKey, async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      error: '缺少 email 或 password 参数'
+    });
+  }
+  
   try {
     isLoggedIn = false;
-    
-    const result = await login(
-      loginCredentials.email,
-      loginCredentials.password
-    );
-    
+    const result = await login(email, password);
     res.json(result);
   } catch (error) {
     res.status(500).json({
@@ -510,7 +508,7 @@ app.listen(PORT, async () => {
   console.log(`📡 服务器: http://localhost:${PORT}`);
   console.log(`⏰ 启动时间: ${new Date().toLocaleString('zh-CN')}`);
   console.log(`🔑 API 密钥: ${API_KEY ? '已设置' : '未设置（不验证）'}`);
-  console.log(`👤 默认账号: ${DEFAULT_EMAIL ? '已配置' : '未配置'}`);
+  console.log(`👤 账号密码: 通过 API 请求传入（更安全）`);
   console.log();
   
   // 初始化浏览器
@@ -518,17 +516,6 @@ app.listen(PORT, async () => {
   
   if (!browserReady) {
     console.error('❌ 浏览器初始化失败，服务器可能无法正常工作');
-  }
-  
-  // 如果有默认账号，自动登录
-  if (DEFAULT_EMAIL && DEFAULT_PASSWORD) {
-    console.log('🔐 使用默认账号自动登录...');
-    const loginResult = await login(DEFAULT_EMAIL, DEFAULT_PASSWORD);
-    if (loginResult.success) {
-      console.log('✅ 自动登录成功');
-    } else {
-      console.log('⚠️ 自动登录失败:', loginResult.error);
-    }
   }
   
   console.log();
