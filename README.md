@@ -10,16 +10,27 @@
 npm install
 ```
 
-### 2. 配置环境变量（可选）
+### 2. 配置环境变量（推荐）
 
 创建 `.env` 文件：
 
 ```bash
 PORT=3000
-API_KEY=your-secret-key-here  # 可选：用于保护 API 访问
+
+# 🔒 安全配置（强烈推荐）
+API_KEY=your-secret-key-here-min-32-chars
+ALLOWED_ORIGINS=feishu.cn,larksuite.com
+
+# 说明：
+# - API_KEY: API 访问密钥，建议至少 32 位随机字符串
+# - ALLOWED_ORIGINS: 允许访问的域名白名单，多个域名用逗号分隔
 ```
 
-**💡 重要提示**：账号密码不需要在环境变量中配置，而是通过 API 请求传入，更加安全！
+**💡 重要提示**：
+- ✅ 账号密码通过 API 请求传入，不存储在服务器
+- ✅ 建议设置 API_KEY 防止未授权访问
+- ✅ 建议配置 ALLOWED_ORIGINS 限制来源域名
+- ✅ 已内置速率限制：10 次/分钟（防止暴力攻击）
 
 ### 3. 启动服务器
 
@@ -61,13 +72,33 @@ npm start
 }
 ```
 
+## 🔒 安全特性
+
+本代理服务器内置多层安全防护：
+
+| 安全措施 | 说明 | 状态 |
+|---------|------|------|
+| **API 密钥验证** | 通过 `X-API-Key` 头验证请求 | ✅ 可配置 |
+| **来源白名单** | 限制允许访问的域名（CORS） | ✅ 可配置 |
+| **速率限制** | 每个 IP 限制 10 次/分钟 | ✅ 默认启用 |
+| **请求日志** | 记录所有请求，便于监控 | ✅ 默认启用 |
+| **请求体大小限制** | 限制为 1MB，防止 DoS 攻击 | ✅ 默认启用 |
+| **凭据不存储** | 账号密码仅在请求中传递 | ✅ 默认启用 |
+
+### 使用建议：
+1. **必须设置 API_KEY**：在 Replit Secrets 中配置
+2. **必须配置 ALLOWED_ORIGINS**：只允许你的飞书域名
+3. **监控日志**：定期检查 Replit 控制台日志，发现异常访问
+
 ## 部署
 
 ### Replit（免费）
 
 1. 访问 https://replit.com/
-2. 创建新 Repl（Node.js）
-3. 复制代码
+2. 导入 GitHub 仓库：`doctorcotton/scienceing-proxy`
+3. 在 Secrets 中配置：
+   - `API_KEY`: 随机生成 32 位字符串
+   - `ALLOWED_ORIGINS`: `feishu.cn,larksuite.com`
 4. 点击 Run
 
 ### 阿里云/腾讯云

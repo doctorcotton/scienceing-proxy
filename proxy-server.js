@@ -20,10 +20,45 @@ const PORT = process.env.PORT || 3000;
 
 // 配置（从环境变量读取）
 const API_KEY = process.env.API_KEY || ''; // 如果设置了，则需要验证
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : []; // 允许的来源域名白名单
+const RATE_LIMIT_WINDOW = 60 * 1000; // 速率限制时间窗口：1分钟
+const RATE_LIMIT_MAX_REQUESTS = 10; // 每个时间窗口最多请求次数
+
+// 速率限制记录
+const rateLimitMap = new Map(); // IP -> { count, resetTime }
 
 // 中间件
-app.use(bodyParser.json());
-app.use(cors());
+app.use(bodyParser.json({ limit: '1mb' })); // 限制请求体大小
+
+// CORS 配置（支持白名单）
+const corsOptions = {
+  origin: function (origin, callback) {
+    // 如果没有配置白名单，允许所有来源
+    if (ALLOWED_ORIGINS.length === 0) {
+      callback(null, true);
+      return;
+    }
+    
+    // 允许没有 origin 的请求（如 Postman、curl）
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    
+    // 检查白名单
+    if (ALLOWED_ORIGINS.some(allowed => origin.includes(allowed))) {
+      callback(null, true);
+    } else {
+      callback(new Error('不允许的来源'));
+    }
+  },
+  credentials: true,
+  maxAge: 86400 // 预检请求缓存 24 小时
+};
+
+app.use(cors(corsOptions));
 
 // 全局变量
 let browser = null;
@@ -32,9 +67,10 @@ let isLoggedIn = false;
 let lastLoginEmail = ''; // 记录上次登录的邮箱，用于判断是否需要重新登录
 
 // ============================================
-// API 密钥验证中间件
+// 安全中间件
 // ============================================
 
+// 1. API 密钥验证
 function verifyApiKey(req, res, next) {
   // 如果未设置 API_KEY，则不验证
   if (!API_KEY) {
@@ -44,11 +80,70 @@ function verifyApiKey(req, res, next) {
   const apiKey = req.headers['x-api-key'];
   
   if (!apiKey || apiKey !== API_KEY) {
+    console.warn(`⚠️ API 密钥验证失败: ${req.ip}`);
     return res.status(401).json({
       success: false,
       error: '无效的 API 密钥'
     });
   }
+  
+  next();
+}
+
+// 2. 速率限制（防止暴力攻击）
+function rateLimiter(req, res, next) {
+  const clientIP = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  
+  // 清理过期记录
+  for (const [ip, data] of rateLimitMap.entries()) {
+    if (now > data.resetTime) {
+      rateLimitMap.delete(ip);
+    }
+  }
+  
+  // 获取或创建该 IP 的记录
+  let record = rateLimitMap.get(clientIP);
+  
+  if (!record) {
+    record = {
+      count: 0,
+      resetTime: now + RATE_LIMIT_WINDOW
+    };
+    rateLimitMap.set(clientIP, record);
+  }
+  
+  // 检查是否超过限制
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+    const remainingTime = Math.ceil((record.resetTime - now) / 1000);
+    console.warn(`⚠️ 速率限制触发: ${clientIP} (${record.count} 次请求)`);
+    return res.status(429).json({
+      success: false,
+      error: `请求过于频繁，请在 ${remainingTime} 秒后重试`,
+      retryAfter: remainingTime
+    });
+  }
+  
+  // 增加计数
+  record.count++;
+  
+  next();
+}
+
+// 3. 请求日志（监控异常行为）
+function requestLogger(req, res, next) {
+  const startTime = Date.now();
+  const clientIP = req.ip || req.connection.remoteAddress;
+  
+  // 记录请求
+  console.log(`📥 [${new Date().toLocaleTimeString('zh-CN')}] ${req.method} ${req.path} - IP: ${clientIP}`);
+  
+  // 监听响应完成
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    const statusColor = res.statusCode >= 400 ? '❌' : '✅';
+    console.log(`${statusColor} [${new Date().toLocaleTimeString('zh-CN')}] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+  });
   
   next();
 }
@@ -340,8 +435,12 @@ async function searchArticles(keyword, options = {}) {
 // API 路由
 // ============================================
 
-// 健康检查
-app.get('/health', async (req, res) => {
+// 应用安全中间件到所有 API 路由
+app.use('/api/*', requestLogger);
+app.use('/api/*', rateLimiter);
+
+// 健康检查（不需要速率限制）
+app.get('/health', requestLogger, async (req, res) => {
   const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -507,8 +606,13 @@ app.listen(PORT, async () => {
   console.log('========================================');
   console.log(`📡 服务器: http://localhost:${PORT}`);
   console.log(`⏰ 启动时间: ${new Date().toLocaleString('zh-CN')}`);
-  console.log(`🔑 API 密钥: ${API_KEY ? '已设置' : '未设置（不验证）'}`);
-  console.log(`👤 账号密码: 通过 API 请求传入（更安全）`);
+  console.log();
+  console.log('🔒 安全配置:');
+  console.log(`  - API 密钥: ${API_KEY ? '✅ 已设置' : '⚠️ 未设置（建议设置）'}`);
+  console.log(`  - 来源白名单: ${ALLOWED_ORIGINS.length > 0 ? `✅ 已配置 (${ALLOWED_ORIGINS.length} 个域名)` : '⚠️ 未配置（允许所有来源）'}`);
+  console.log(`  - 速率限制: ✅ 已启用 (${RATE_LIMIT_MAX_REQUESTS} 次/分钟)`);
+  console.log(`  - 请求日志: ✅ 已启用`);
+  console.log(`  - 账号密码: ✅ 通过 API 请求传入（不存储）`);
   console.log();
   
   // 初始化浏览器
